@@ -10,15 +10,39 @@
 
 using namespace std;
 
+// Retorna vetores de 2 cidades a partir do numero de cidades passado
+vector<vector<int>> get_tasks(int num_cities) {
+    vector<vector<int>> tasks;
+    for (int i = 1; i < num_cities; i++) {
+        for (int j = 1; j < num_cities; j++) {
+            if (i != j) {
+                vector<int> tuple;
+                tuple.push_back(i);
+                tuple.push_back(j);
+                tasks.push_back(tuple);
+            }
+        }
+    }
+    return tasks;
+}
+
 int master() {
     printf("[Mestre] Started\n");
+
+    // Saco de tarefas
+    vector<vector<int>> bag_of_tasks = get_tasks(4);
+
+    // Variavel que recebe resultados
     int work;
+
+    // Status
     MPI_Status status, status2;
-    int jobs = 4;
+
+    // Controla slaves
     int slaves_working = 0;
     bool has_slave_alive = false;
 
-    while (jobs > 0 || has_slave_alive) {
+    while (!bag_of_tasks.empty() || has_slave_alive) {
 
         // Aguardando pedido de tarefas
         MPI_Probe(1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
@@ -30,16 +54,24 @@ int master() {
             // Recebendo a mensagem
             MPI_Recv(&work, 1, MPI_INT, 1, TAG_ASK_FOR_JOB, MPI_COMM_WORLD, &status2);
             printf("[Mestre] Recebi solicitacao de task do escravo %d\n", slave_rank);
-            
+
             // Se existem tarefas
-            if (jobs > 0) {
-                printf("[Mestre] Mandando task %d para o escravo %d\n", jobs, slave_rank);
-                MPI_Send(&jobs, 1, MPI_INT, 1, TAG_JOB_DATA, MPI_COMM_WORLD);
+            if (!bag_of_tasks.empty()) {
+
+                // Busca tarefa
+                vector<int> task_to_send = bag_of_tasks[0];
+                bag_of_tasks.pop_back();
+                int size = task_to_send.size();
+
+                // Envia tarefa
+                printf("[Mestre] Mandando task para o escravo %d\n", slave_rank);
+                MPI_Send(&task_to_send[0], size, MPI_INT, 1, TAG_JOB_DATA, MPI_COMM_WORLD);
+
+                // Controla Slaves
                 slaves_working++;
                 has_slave_alive = true;
-                jobs--;
             } else {
-                MPI_Send(&jobs, 1, MPI_INT, 1, TAG_STOP, MPI_COMM_WORLD);
+                MPI_Send(&work, 1, MPI_INT, 1, TAG_STOP, MPI_COMM_WORLD);
                 if (slaves_working == 0) {
                     has_slave_alive = false;
                 }
@@ -51,7 +83,7 @@ int master() {
 
             // Recebendo o resultado
             MPI_Recv(&work, 1, MPI_INT, 1, TAG_RESULT, MPI_COMM_WORLD, &status2);
-            printf("[Mestre] Recebi resultado da task do escravo %d\n", slave_rank);
+            printf("[Mestre] Recebi resultado da task do escravo %d, %d\n", slave_rank, work);
             slaves_working--;
         }
     }
@@ -60,6 +92,10 @@ int master() {
 
 int slave() {
     printf("[Escravo] Iniciado\n");
+
+    // Recebe tarefas
+    vector<int> task_received;
+
     MPI_Status status, status2;
     int work;
     int stop = 0;
@@ -73,13 +109,15 @@ int slave() {
 
         // Caso em que mestre retornou tarefa
         if (status.MPI_TAG == TAG_JOB_DATA) {
+            // Espera 2 cidades
+            task_received.resize(2);
 
             // Recebendo a mensagem
-            MPI_Recv(&work, 1, MPI_INT, 0, TAG_JOB_DATA, MPI_COMM_WORLD, &status2);
-            printf("[Escravo] Tarefa recebida: %d\n", work);
+            MPI_Recv(&task_received[0], 2, MPI_INT, 0, TAG_JOB_DATA, MPI_COMM_WORLD, &status2);
+            printf("[Escravo] Tarefa recebida: %d\n", task_received[0]);
 
             // TODO Processar a tarefa
-            work = work + 1;
+            work = task_received[0] + task_received[1];
 
             // Envia o resultado para o mestre
             MPI_Send(&work, 1, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
@@ -108,21 +146,4 @@ int main(int argc, char **argv) {
         slave();
     }
     MPI_Finalize();
-}
-
-
-// Retorna vetores de 2 cidades a partir do numero de cidades passado
-vector<vector<int>> get_tasks(int num_cities) {
-    vector<vector<int>> test;
-    for (int i = 1; i < num_cities; i++) {
-        for (int j = 1; j < num_cities; j++) {
-            if (i != j) {
-                vector<int> g1;
-                g1.push_back(i);
-                g1.push_back(j);
-                test.push_back(g1);
-            }
-        }
-    }
-    return test;
 }
