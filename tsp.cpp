@@ -90,7 +90,7 @@ void master(vector<vector<int>> &cities) {
     // Saco de tarefas
     vector<vector<int>> bag_of_tasks = get_tasks(cities.size());
 
-    printf("Saco de tarefas com %d tarefas", bag_of_tasks.size());
+    printf("[Mestre] Saco de tarefas com %zu tarefas\n", bag_of_tasks.size());
 
     // Variavel que recebe resultados
     vector<int> result;
@@ -142,15 +142,33 @@ void master(vector<vector<int>> &cities) {
 
         // Caso em que o escravo retornou resultado
         if (status.MPI_TAG == TAG_RESULT) {
-            //result.resize(cities.size() + 1);
+            result.resize(cities.size() + 2);
             // Recebendo o resultado
-            MPI_Recv(&work, 1, MPI_INT, 1, TAG_RESULT, MPI_COMM_WORLD, &status2);
+            MPI_Recv(&result[0], 7, MPI_INT, 1, TAG_RESULT, MPI_COMM_WORLD, &status2);
             printf("[Mestre] Recebi resultado da task do escravo %d\n", slave_rank);
-            //printf("[Mestre] Vetor result %d %d %d %d %d %d %d\n", slave_rank, result[0], result[1], result[2], result[3], result[4], result[5]);
-
+	    //for (auto i: result)
+            //    std::cout << i << ' ';
+            //printf("\n");
+	    if(result.back() < best_path_cost) {
+		//printf("Novo melhor caminho encontrado, melhor custo mudou de %d para %d \n", best_path_cost, result.back());
+		best_path_cost = result.back();
+		best_path = result;
+		//for (auto i: best_path)
+		//	std::cout << i << ' ';
+		//printf("\n");
+	    }
             slaves_working--;
         }
     }
+    printf("[Result] Melhor caminho: ");
+    for (int i = 0; i < best_path.size() - 1; i++){
+	printf(" %d ", best_path[i]); 
+	if (i != best_path.size() - 2) {
+	    printf(" -> ");
+	}
+    }
+    printf("\n");
+    printf("[Result] Custo do menor caminho: %d\n", best_path_cost);
 }
 
 void slave(vector<vector<int>> &cities) {
@@ -184,16 +202,15 @@ void slave(vector<vector<int>> &cities) {
             printf("[Escravo] Tarefa recebida, cidades iniciais: [%d, %d]\n", task_received[0], task_received[1]);
 
             // Calcula o menor caminho
-            vector<int> best_path = search_best_path_with_openMP(cities, task_received);
-	    best_path.push_back(getPathCost(cities, best_path));
-	    printf("Best path %d\n", best_path.size());
-	    for (auto i: best_path)
-	    	std::cout << i << ' ';
-            
-	    work = 2;
+            result = search_best_path_with_openMP(cities, task_received);
+	    result.push_back(getPathCost(cities, result));
+
+	    //for (auto i: result)
+	    //	std::cout << i << ' ';
+ 	    //printf("\n");
 
             // Envia o resultado para o mestre
-            MPI_Send(&work, 1, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+            MPI_Send(&result[0], result.size(), MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
         }
 
         // Caso em que mestre retornou parada
@@ -210,20 +227,25 @@ void slave(vector<vector<int>> &cities) {
 int main(int argc, char **argv) {
     int my_rank;
     int proc_n;
+    double tempo_inicial;
+    double tempo_final;
 
     // Cria a matrix de distancia
-    vector<vector<int>> cities = {{0, 9, 3, 2, 7},
-                                  {9, 0, 8, 7, 2},
-                                  {3, 8, 0, 4, 5},
-                                  {2, 7, 4, 0, 8},
-				  {5, 6, 7, 1, 0}
+    vector<vector<int>> cities = {{0, 9, 3, 2, 10},
+                                  {9, 0, 8, 7, 5},
+                                  {3, 8, 0, 4, 11},
+                                  {2, 7, 4, 0, 6},
+				  {10, 5, 11, 6, 0}
     };
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
     if (my_rank == 0) {
-        master(cities);
+	tempo_inicial = MPI_Wtime();
+	master(cities);
+	tempo_final = MPI_Wtime();
+	printf ("[Result] Tempo de execução: %3.1f segundos \n", tempo_final - tempo_inicial);
     } else {
         slave(cities);
     }
