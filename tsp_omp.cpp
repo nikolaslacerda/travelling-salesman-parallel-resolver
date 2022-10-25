@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <iostream>
+#include <bits/stdc++.h>
 #include "mpi.h"
 
 #define TAG_ASK_FOR_JOB 1
@@ -9,6 +11,61 @@
 #define TAG_RESULT 4
 
 using namespace std;
+
+const int INF = 1e9;
+
+int get_path_cost(vector<vector<int>> &matrix, vector<int> &path) {
+    int cost = 0;
+    for (int i = 0; i < path.size() - 1; i++) {
+        cost += matrix[path[i]][path[i + 1]];
+    }
+    return cost;
+}
+
+vector<int> search_best_path_with_openMP(vector<vector<int>> &matrix, vector<int> &initial_cities) {
+
+    // Numero de cidades
+    int num_nodes = matrix.size() - 1;
+    printf("Nodes number: %d\n", num_nodes);
+
+    // Melhor custo
+    int optimal_cost = INF;
+
+    // Caminho com o melhor custo
+    vector<int> solution_list;
+
+    // Cidades Permutadas
+    vector<int> nodes;
+
+
+    for (int i = 2; i < matrix[0].size(); i++) {
+            
+            nodes.erase(nodes.begin(), nodes.end());
+
+            for (int l = 1; l <= num_nodes; l++) {
+                if (l != initial_cities[0] && l != initial_cities[1]) {
+                    nodes.push_back(l);
+		}
+	    }
+
+            do {
+                vector<int> possible_solution_list = nodes;
+                possible_solution_list.push_back(0);
+                possible_solution_list.insert(possible_solution_list.begin(), initial_cities[0]);
+                possible_solution_list.insert(possible_solution_list.begin() + 1, initial_cities[1]);
+                int current_path_weight = get_path_cost(matrix, possible_solution_list);
+
+                    if (current_path_weight < optimal_cost) {
+                        optimal_cost = current_path_weight;
+                        solution_list = possible_solution_list;
+                    }
+
+            } while (next_permutation(nodes.begin(), nodes.end()));
+  	}
+
+    return solution_list;
+	
+}
 
 // Retorna vetores de 2 cidades a partir do numero de cidades passado
 vector<vector<int>> get_tasks(int num_cities) {
@@ -24,70 +81,6 @@ vector<vector<int>> get_tasks(int num_cities) {
         }
     }
     return tasks;
-}
-
-void master() {
-    printf("[Mestre] Started\n");
-
-    // Saco de tarefas
-    vector<vector<int>> bag_of_tasks = get_tasks(4);
-
-    // Variavel que recebe resultados
-    int work;
-
-    // Status
-    MPI_Status status, status2;
-
-    // Controla slaves
-    int slaves_working = 0;
-    bool has_slave_alive = false;
-
-    while (!bag_of_tasks.empty() || has_slave_alive) {
-
-        // Aguardando pedido de tarefas
-        MPI_Probe(1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        int slave_rank = status.MPI_SOURCE;
-
-        // Caso em que o escravo solicitou trabalho
-        if (status.MPI_TAG == TAG_ASK_FOR_JOB) {
-
-            // Recebendo a mensagem
-            MPI_Recv(&work, 1, MPI_INT, slave_rank, TAG_ASK_FOR_JOB, MPI_COMM_WORLD, &status2);
-            printf("[Mestre] Recebi solicitacao de task do escravo %d\n", slave_rank);
-
-            // Se existem tarefas
-            if (!bag_of_tasks.empty()) {
-
-                // Busca tarefa
-                vector<int> task_to_send = bag_of_tasks.back();
-                bag_of_tasks.pop_back();
-                int size = task_to_send.size();
-
-                // Envia tarefa
-                printf("[Mestre] Mandando task para o escravo %d\n", slave_rank);
-                MPI_Send(&task_to_send[0], size, MPI_INT, slave_rank, TAG_JOB_DATA, MPI_COMM_WORLD);
-
-                // Controla Slaves
-                slaves_working++;
-                has_slave_alive = true;
-            } else {
-                MPI_Send(&work, 1, MPI_INT, slave_rank, TAG_STOP, MPI_COMM_WORLD);
-                if (slaves_working == 0) {
-                    has_slave_alive = false;
-                }
-            }
-        }
-
-        // Caso em que o escravo retornou resultado
-        if (status.MPI_TAG == TAG_RESULT) {
-
-            // Recebendo o resultado
-            MPI_Recv(&work, 1, MPI_INT, slave_rank, TAG_RESULT, MPI_COMM_WORLD, &status2);
-            printf("[Mestre] Recebi resultado da task do escravo %d, Resultado:  %d\n", slave_rank, work);
-            slaves_working--;
-        }
-    }
-
 }
 
 void slave() {
@@ -134,12 +127,65 @@ void slave() {
     } while (stop == 0);
 }
 
+void master() {
+    printf("[Mestre] Started\n");
+
+    // Saco de tarefas
+    vector<vector<int>> bag_of_tasks = get_tasks(4);
+
+    // Variavel que recebe resultados
+    int work;
+
+    // Status
+    MPI_Status status, status2;
+
+    // Controla slaves
+    int slaves_working = 0;
+    bool has_slave_alive = false;
+
+    while (!bag_of_tasks.empty() || has_slave_alive) {
+
+        // Aguardando pedido de tarefas
+        MPI_Probe(1, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            // Envia o resultado para o mestre
+            MPI_Send(&work, 1, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+        }
+
+        // Caso em que mestre retornou parada
+        if (status.MPI_TAG == TAG_STOP) {
+
+            // Recebendo a mensagem
+            MPI_Recv(&work, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status2);
+            printf("[Escravo] Parando de trabalhar\n");
+            stop = 1;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     int my_rank;
     int proc_n;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
+
+    // Cria a matrix de distancia a partir do arquivo passado pelo argumento
+    freopen("data/n=4.txt", "r", stdin);
+    size_t n;
+    std::cin >> n;
+    
+    printf("Open file");
+
+    // Instancia a matriz
+    vector<vector<int>> matrix = { {0,9,3,2}, {9, 0, 8, 7}, {3,8,0,4}, {2,7,4,0} };
+
+    printf("criou vetor");
+
+    // Popula a matriz
+    printf("populou matriz");
+    // Inicia o algoritmo
+    std::cout << matrix[0].size() << "\n";
+    printf("ok");
     if (my_rank == 0) {
         master();
     } else {
