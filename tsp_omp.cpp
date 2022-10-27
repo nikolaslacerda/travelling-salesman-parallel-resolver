@@ -170,9 +170,9 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
 
     // Cria a matrix de distancia a partir do arquivo passado pelo argumento
-    freopen("data/n=4.txt", "r", stdin);
-    size_t n;
-    std::cin >> n;
+    //freopen("data/n=4.txt", "r", stdin);
+    //size_t n;
+    //std::cin >> n;
     
     printf("Open file");
 
