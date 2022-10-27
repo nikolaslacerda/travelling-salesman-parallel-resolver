@@ -1,2 +1,3 @@
-# computacao-paralela
-Trabalhos da Disciplina de programação paralela 22/2 
+# TSP Problem MPI Implementation
+
+Trabalho 2 da Disciplina de Programação Paralela da PUCRS 22/2 
